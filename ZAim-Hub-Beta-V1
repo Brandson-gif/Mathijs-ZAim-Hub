@@ -1,0 +1,230 @@
+-- Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+-- Local Player
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+-- Aimbot Settings
+local autoAimEnabled = false
+local wallHackEnabled = false
+local selectedAimbotKey = Enum.KeyCode.LeftAlt
+local waitingForKey = false
+local lockedTarget = nil
+local fovRadius = 120
+
+-- GUI
+local screenGui = Instance.new("ScreenGui", game.CoreGui)
+screenGui.ResetOnSpawn = false
+screenGui.Name = "CheatMenu"
+
+local menuFrame = Instance.new("Frame", screenGui)
+menuFrame.Position = UDim2.new(1, -210, 1, -160)
+menuFrame.Size = UDim2.new(0, 200, 0, 130)
+menuFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+menuFrame.BorderSizePixel = 0
+menuFrame.Visible = false
+menuFrame.BackgroundTransparency = 0.1
+menuFrame.ClipsDescendants = true
+
+local uiCorner = Instance.new("UICorner", menuFrame)
+uiCorner.CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel", menuFrame)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "💻 Cheat Menu"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+
+local autoAimStatus = Instance.new("TextButton", menuFrame)
+autoAimStatus.Position = UDim2.new(0, 10, 0, 35)
+autoAimStatus.Size = UDim2.new(0, 180, 0, 25)
+autoAimStatus.Text = "Auto Aim: OFF"
+autoAimStatus.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+autoAimStatus.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoAimStatus.Font = Enum.Font.Gotham
+autoAimStatus.TextSize = 14
+
+local wallHackButton = Instance.new("TextButton", menuFrame)
+wallHackButton.Position = UDim2.new(0, 10, 0, 65)
+wallHackButton.Size = UDim2.new(0, 180, 0, 25)
+wallHackButton.Text = "Wall Hack: OFF"
+wallHackButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+wallHackButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+wallHackButton.Font = Enum.Font.Gotham
+wallHackButton.TextSize = 14
+
+local keyBindLabel = Instance.new("TextButton", menuFrame)
+keyBindLabel.Position = UDim2.new(0, 10, 0, 95)
+keyBindLabel.Size = UDim2.new(0, 180, 0, 25)
+keyBindLabel.Text = "Aimbot Key: LeftAlt"
+keyBindLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+keyBindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+keyBindLabel.Font = Enum.Font.Gotham
+keyBindLabel.TextSize = 14
+
+-- FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Visible = true
+fovCircle.Color = Color3.fromRGB(0, 255, 0)
+fovCircle.Radius = fovRadius
+fovCircle.Thickness = 1
+fovCircle.Filled = false
+fovCircle.Transparency = 1
+
+-- Toggle menu with Insert key
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if input.KeyCode == Enum.KeyCode.Insert then
+		menuFrame.Visible = not menuFrame.Visible
+	end
+end)
+
+-- Change aimbot key
+keyBindLabel.MouseButton1Click:Connect(function()
+	waitingForKey = true
+	keyBindLabel.Text = "Press new key..."
+
+	local connection
+	connection = UserInputService.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			selectedAimbotKey = input.KeyCode
+			keyBindLabel.Text = "Aimbot Key: " .. input.KeyCode.Name
+			waitingForKey = false
+			connection:Disconnect()
+		end
+	end)
+end)
+
+-- Toggle aimbot on button click
+autoAimStatus.MouseButton1Click:Connect(function()
+	autoAimEnabled = not autoAimEnabled
+	autoAimStatus.Text = "Auto Aim: " .. (autoAimEnabled and "ON" or "OFF")
+	if autoAimEnabled then
+		local function getClosestEnemyInFOV()
+			local camera = workspace.CurrentCamera
+			local closest = nil
+			local shortestDist = fovRadius
+
+			for _, otherPlayer in pairs(Players:GetPlayers()) do
+				if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+					local pos, onScreen = camera:WorldToViewportPoint(otherPlayer.Character.HumanoidRootPart.Position)
+					if onScreen then
+						local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(mouse.X, mouse.Y)).Magnitude
+						if dist <= fovRadius and dist < shortestDist then
+							shortestDist = dist
+							closest = otherPlayer.Character
+						end
+					end
+				end
+			end
+			return closest
+		end
+		lockedTarget = getClosestEnemyInFOV()
+	else
+		lockedTarget = nil
+	end
+end)
+
+--- Utility: Apply/remove highlight
+local function applyWallhackToCharacter(char, enable)
+	if enable then
+		if not char:FindFirstChild("WallHighlight") then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "WallHighlight"
+			highlight.FillColor = Color3.fromRGB(255, 0, 0) -- 🔴 Red
+			highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+			highlight.FillTransparency = 0.3
+			highlight.OutlineTransparency = 0
+			highlight.Adornee = char
+			highlight.Parent = char
+		end
+	else
+		local existing = char:FindFirstChild("WallHighlight")
+		if existing then
+			existing:Destroy()
+		end
+	end
+end
+
+-- Wallhack toggle
+wallHackButton.MouseButton1Click:Connect(function()
+	wallHackEnabled = not wallHackEnabled
+	wallHackButton.Text = "Wall Hack: " .. (wallHackEnabled and "ON" or "OFF")
+
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= player and plr.Character then
+			applyWallhackToCharacter(plr.Character, wallHackEnabled)
+		end
+	end
+end)
+
+-- Also apply to new players or respawns
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function(char)
+		if wallHackEnabled then
+			task.wait(1) -- Wait for character to fully load
+			applyWallhackToCharacter(char, true)
+		end
+	end)
+end)
+
+Players.PlayerRemoving:Connect(function(plr)
+	if plr.Character and plr.Character:FindFirstChild("WallHighlight") then
+		plr.Character.WallHighlight:Destroy()
+	end
+end)
+
+-- Aimbot key toggle logic
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+
+	if input.KeyCode == selectedAimbotKey and not waitingForKey then
+		autoAimEnabled = not autoAimEnabled
+		autoAimStatus.Text = "Auto Aim: " .. (autoAimEnabled and "ON" or "OFF")
+
+		if autoAimEnabled then
+			local function getClosestEnemyInFOV()
+				local camera = workspace.CurrentCamera
+				local closest = nil
+				local shortestDist = fovRadius
+
+				for _, otherPlayer in pairs(Players:GetPlayers()) do
+					if otherPlayer ~= player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") then
+						local pos, onScreen = camera:WorldToViewportPoint(otherPlayer.Character.HumanoidRootPart.Position)
+						if onScreen then
+							local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(mouse.X, mouse.Y)).Magnitude
+							if dist <= fovRadius and dist < shortestDist then
+								shortestDist = dist
+								closest = otherPlayer.Character
+							end
+						end
+					end
+				end
+				return closest
+			end
+			lockedTarget = getClosestEnemyInFOV()
+		else
+			lockedTarget = nil
+		end
+	end
+end)
+
+-- FOV + Tracking
+RunService.RenderStepped:Connect(function()
+	local camera = workspace.CurrentCamera
+local viewportSize = camera.ViewportSize
+fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+
+
+	if autoAimEnabled and lockedTarget and lockedTarget:FindFirstChild("HumanoidRootPart") then
+		local camera = workspace.CurrentCamera
+		camera.CFrame = CFrame.new(camera.CFrame.Position, lockedTarget.HumanoidRootPart.Position)
+		mouse.Icon = "rbxassetid://305490514"
+	else
+		mouse.Icon = ""
+	end
+end)
