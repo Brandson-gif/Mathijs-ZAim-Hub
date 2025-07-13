@@ -1,0 +1,244 @@
+-- Place this in StarterPlayerScripts as a LocalScript
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- === State ===
+local autoAimEnabled = false
+local espEnabled = false
+local fovVisible = true
+local menuVisible = true
+
+local aimKey = Enum.KeyCode.LeftAlt
+local espKey = Enum.KeyCode.V
+local menuKey = Enum.KeyCode.Insert
+
+local fovSize = 150
+local fovColor = Color3.fromRGB(0, 255, 0)
+
+-- === FOV Circle using Drawing API ===
+local drawingCircle = Drawing.new("Circle")
+drawingCircle.Thickness = 2
+drawingCircle.NumSides = 100
+drawingCircle.Radius = fovSize
+drawingCircle.Color = fovColor
+drawingCircle.Filled = false
+drawingCircle.Visible = true
+drawingCircle.Transparency = 1
+
+-- === GUI Setup ===
+local screenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+screenGui.Name = "AimESPMenu"
+screenGui.ResetOnSpawn = false
+
+local menuFrame = Instance.new("Frame", screenGui)
+menuFrame.Size = UDim2.new(0, 320, 0, 360)
+menuFrame.Position = UDim2.new(1, -340, 1, -380)
+menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+menuFrame.BorderSizePixel = 0
+menuFrame.Visible = menuVisible
+Instance.new("UICorner", menuFrame).CornerRadius = UDim.new(0, 12)
+
+local uiList = Instance.new("UIListLayout", menuFrame)
+uiList.Padding = UDim.new(0, 8)
+uiList.FillDirection = Enum.FillDirection.Vertical
+uiList.SortOrder = Enum.SortOrder.LayoutOrder
+uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+-- === GUI Helpers ===
+local function createToggleButton(name, default, callback)
+	local btn = Instance.new("TextButton", menuFrame)
+	btn.Size = UDim2.new(0.9, 0, 0, 30)
+	btn.BackgroundColor3 = default and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+	btn.Text = name .. ": " .. (default and "ON" or "OFF")
+	btn.TextColor3 = Color3.new(1,1,1)
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 20
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+	btn.MouseButton1Click:Connect(function()
+		default = not default
+		callback(default)
+		btn.BackgroundColor3 = default and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+		btn.Text = name .. ": " .. (default and "ON" or "OFF")
+	end)
+end
+
+local function createKeybindChanger(name, defaultKey, callback)
+	local label = Instance.new("TextButton", menuFrame)
+	label.Size = UDim2.new(0.9, 0, 0, 30)
+	label.Text = name .. ": " .. defaultKey.Name
+	label.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	label.TextColor3 = Color3.new(1,1,1)
+	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 18
+	Instance.new("UICorner", label).CornerRadius = UDim.new(0, 6)
+
+	label.MouseButton1Click:Connect(function()
+		label.Text = "Press a key..."
+		local conn
+		conn = UIS.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Keyboard then
+				defaultKey = input.KeyCode
+				label.Text = name .. ": " .. defaultKey.Name
+				callback(defaultKey)
+				conn:Disconnect()
+			end
+		end)
+	end)
+end
+
+local function createFOVSlider()
+	local label = Instance.new("TextLabel", menuFrame)
+	label.Size = UDim2.new(0.9, 0, 0, 25)
+	label.Text = "FOV Radius: " .. tostring(fovSize)
+	label.TextColor3 = Color3.new(1, 1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 18
+	label.TextXAlignment = Enum.TextXAlignment.Left
+
+	local sliderFrame = Instance.new("Frame", menuFrame)
+	sliderFrame.Size = UDim2.new(0.9, 0, 0, 20)
+	sliderFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	Instance.new("UICorner", sliderFrame).CornerRadius = UDim.new(0, 6)
+
+	local fill = Instance.new("Frame", sliderFrame)
+	fill.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+	fill.Size = UDim2.new(fovSize / 300, 0, 1, 0)
+	fill.Position = UDim2.new(0, 0, 0, 0)
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 6)
+
+	local dragging = false
+
+	sliderFrame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+		end
+	end)
+
+	sliderFrame.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+		end
+	end)
+
+	UIS.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local relX = input.Position.X - sliderFrame.AbsolutePosition.X
+			local percent = math.clamp(relX / sliderFrame.AbsoluteSize.X, 0, 1)
+			fovSize = math.floor(percent * 300)
+			label.Text = "FOV Radius: " .. tostring(fovSize)
+			fill.Size = UDim2.new(percent, 0, 1, 0)
+			drawingCircle.Radius = fovSize
+		end
+	end)
+end
+
+local function createFOVColorPicker()
+	local button = Instance.new("TextButton", menuFrame)
+	button.Size = UDim2.new(0.9, 0, 0, 30)
+	button.Text = "Change FOV Color"
+	button.BackgroundColor3 = fovColor
+	button.TextColor3 = Color3.new(1,1,1)
+	button.Font = Enum.Font.SourceSansBold
+	button.TextSize = 18
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 6)
+
+	button.MouseButton1Click:Connect(function()
+		local r = math.random(100, 255)
+		local g = math.random(100, 255)
+		local b = math.random(100, 255)
+		fovColor = Color3.fromRGB(r, g, b)
+		drawingCircle.Color = fovColor
+		button.BackgroundColor3 = fovColor
+	end)
+end
+
+-- === Add UI Elements ===
+createToggleButton("Auto-Aim", autoAimEnabled, function(val) autoAimEnabled = val end)
+createKeybindChanger("Auto-Aim Key", aimKey, function(val) aimKey = val end)
+createToggleButton("ESP", espEnabled, function(val) espEnabled = val end)
+createKeybindChanger("ESP Key", espKey, function(val) espKey = val end)
+createToggleButton("FOV Display", fovVisible, function(val) fovVisible = val drawingCircle.Visible = val end)
+createFOVSlider()
+createFOVColorPicker()
+
+-- === Toggle keys ===
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == menuKey then
+		menuVisible = not menuVisible
+		menuFrame.Visible = menuVisible
+	end
+	if input.KeyCode == aimKey then
+		autoAimEnabled = not autoAimEnabled
+	end
+	if input.KeyCode == espKey then
+		espEnabled = not espEnabled
+	end
+end)
+
+-- === Get Closest Target ===
+local function getClosestTarget()
+	local character = LocalPlayer.Character
+	if not character or not character:FindFirstChild("Head") then return nil end
+
+	local myHead = character.Head
+	local closest, minDist = nil, math.huge
+
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+			local head = plr.Character.Head
+			local screenPoint, onScreen = Camera:WorldToViewportPoint(head.Position)
+			local mousePos = UIS:GetMouseLocation()
+			local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePos).Magnitude
+			if onScreen and dist < fovSize and dist < minDist then
+				closest = plr
+				minDist = dist
+			end
+		end
+	end
+	return closest
+end
+
+-- === Main Loop ===
+RS.RenderStepped:Connect(function()
+	local mousePos = UIS:GetMouseLocation()
+
+	drawingCircle.Position = Vector2.new(mousePos.X, mousePos.Y)
+	drawingCircle.Radius = fovSize
+	drawingCircle.Color = fovColor
+	drawingCircle.Visible = fovVisible and (autoAimEnabled or menuVisible)
+
+	if autoAimEnabled then
+		local target = getClosestTarget()
+		if target and target.Character and target.Character:FindFirstChild("Head") then
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+		end
+	end
+
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character then
+			local char = plr.Character
+			local existing = char:FindFirstChild("ESPHighlight")
+
+			if espEnabled then
+				if not existing then
+					local hl = Instance.new("Highlight")
+					hl.Name = "ESPHighlight"
+					hl.FillColor = Color3.fromRGB(255, 0, 0)
+					hl.OutlineColor = Color3.new(1, 1, 1)
+					hl.FillTransparency = 0.7
+					hl.OutlineTransparency = 0
+					hl.Adornee = char
+					hl.Parent = char
+				end
+			elseif existing then
+				existing:Destroy()
+			end
+		end
+	end
+end)
